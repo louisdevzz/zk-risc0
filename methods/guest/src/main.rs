@@ -111,13 +111,24 @@ fn relu_derivative(x: f32) -> f32 {
 }
 
 fn main() {
+    println!("Starting the neural network training and testing process...");
+
+    println!("Reading input data...");
     let customer_data: Vec<(Vec<f32>, f32)> = env::read();
     let epochs: usize = env::read();
     let learning_rate: f32 = env::read();
+    let test_inputs: Vec<Vec<f32>> = env::read();
+
+    println!("Input data read successfully.");
+    println!("Number of training samples: {}", customer_data.len());
+    println!("Number of epochs: {}", epochs);
+    println!("Learning rate: {}", learning_rate);
+    println!("Number of test inputs: {}", test_inputs.len());
 
     let input_size = customer_data[0].0.len();
+    println!("Initializing neural network with input size: {}", input_size);
     let mut nn = NeuralNetwork::new(&[input_size, 32, 16, 1]);
-    
+
     println!("Initial network parameters:");
     print_network_params(&nn);
 
@@ -132,27 +143,38 @@ fn main() {
         }
         let avg_loss = total_loss / customer_data.len() as f32;
         
-        if epoch % 100 == 0 || epoch == epochs - 1 {
+        if epoch % 10 == 0 || epoch == epochs - 1 {
             println!("Epoch {}: Average Loss = {:.6}", epoch, avg_loss);
         }
     }
 
-    println!("\nFinal network parameters:");
+    println!("\nTraining completed.");
+    println!("Final network parameters:");
     print_network_params(&nn);
 
-    let test_inputs: Vec<Vec<f32>> = env::read();
     println!("\nTesting the network:");
-    let predictions: Vec<f32> = test_inputs.iter().map(|input| {
-        let prediction = nn.forward(input)[0];
-        println!("Input: {:?}, Prediction: {:.4}", input, prediction);
-        prediction
-    }).collect();
+    let mut predictions = Vec::new();
+    for input in &test_inputs {
+        match nn.forward(input).get(0) {
+            Some(&prediction) => {
+                println!("Input: {:?}, Prediction: {:.4}", input, prediction);
+                predictions.push(prediction);
+            },
+            None => {
+                println!("Error: Failed to get prediction for input: {:?}", input);
+                predictions.push(f32::NAN); // Push NaN for failed predictions
+            }
+        }
+    }
 
+    println!("\nCommitting results...");
     let weights_and_biases: Vec<(Vec<Vec<f32>>, Vec<f32>)> = nn.layers
         .iter()
         .map(|layer| (layer.weights.clone(), layer.biases.clone()))
         .collect();
     env::commit(&(weights_and_biases, predictions));
+
+    println!("Process completed successfully.");
 }
 
 fn print_network_params(nn: &NeuralNetwork) {

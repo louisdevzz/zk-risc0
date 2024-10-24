@@ -36,7 +36,7 @@ fn main() {
             (vec![4.5, 5.5, 6.5], 1.0),
             (vec![0.5, 1.5, 2.5], 0.2),
         ],
-        epochs: 5000,
+        epochs: 500,  // Changed from 5000 to 100
         learning_rate: 0.001,
         test_inputs: vec![
             vec![1.2, 2.2, 3.2],
