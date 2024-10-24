@@ -1,7 +1,6 @@
 #![no_main]
 use risc0_zkvm::guest::env;
 
-// Neural network structure
 struct NeuralNetwork {
     layers: Vec<Layer>,
 }
@@ -9,17 +8,15 @@ struct NeuralNetwork {
 struct Layer {
     weights: Vec<Vec<f32>>,
     biases: Vec<f32>,
-    activation: fn(f32) -> f32,
 }
 
 impl NeuralNetwork {
-    fn new(layer_sizes: &[usize], activation: fn(f32) -> f32) -> Self {
+    fn new(layer_sizes: &[usize]) -> Self {
         let mut layers = Vec::new();
         for i in 0..layer_sizes.len() - 1 {
             layers.push(Layer {
                 weights: vec![vec![0.1; layer_sizes[i]]; layer_sizes[i + 1]],
                 biases: vec![0.1; layer_sizes[i + 1]],
-                activation,
             });
         }
         NeuralNetwork { layers }
@@ -28,16 +25,7 @@ impl NeuralNetwork {
     fn forward(&self, inputs: &[f32]) -> Vec<f32> {
         let mut current = inputs.to_vec();
         for layer in &self.layers {
-            let mut next = vec![0.0; layer.biases.len()];
-            for (j, neuron) in next.iter_mut().enumerate() {
-                *neuron = layer.biases[j] + layer.weights[j]
-                    .iter()
-                    .zip(current.iter())
-                    .map(|(&w, &x)| w * x)
-                    .sum::<f32>();
-                *neuron = (layer.activation)(*neuron);
-            }
-            current = next;
+            current = layer.forward(&current);
         }
         current
     }
@@ -48,16 +36,7 @@ impl NeuralNetwork {
 
         // Forward pass
         for layer in &self.layers {
-            let mut z = vec![0.0; layer.biases.len()];
-            let mut a = vec![0.0; layer.biases.len()];
-            for (j, (zj, aj)) in z.iter_mut().zip(a.iter_mut()).enumerate() {
-                *zj = layer.biases[j] + layer.weights[j]
-                    .iter()
-                    .zip(activations.last().unwrap().iter())
-                    .map(|(&w, &x)| w * x)
-                    .sum::<f32>();
-                *aj = (layer.activation)(*zj);
-            }
+            let (z, a) = layer.forward_with_cache(&activations.last().unwrap());
             weighted_inputs.push(z);
             activations.push(a);
         }
@@ -91,49 +70,63 @@ impl NeuralNetwork {
 
         // Update weights and biases
         for (l, layer) in self.layers.iter_mut().enumerate() {
-            let delta = &deltas[l];
-            for j in 0..layer.biases.len() {
-                layer.biases[j] -= learning_rate * delta[j];
-                for (i, wi) in layer.weights[j].iter_mut().enumerate() {
-                    *wi -= learning_rate * delta[j] * activations[l][i];
-                }
+            layer.update_params(&activations[l], &deltas[l], learning_rate);
+        }
+    }
+}
+
+impl Layer {
+    fn forward(&self, inputs: &[f32]) -> Vec<f32> {
+        let mut output = vec![0.0; self.biases.len()];
+        for (j, out) in output.iter_mut().enumerate() {
+            *out = self.biases[j] + self.weights[j].iter().zip(inputs).map(|(&w, &x)| w * x).sum::<f32>();
+            *out = out.max(0.0); // ReLU activation
+        }
+        output
+    }
+
+    fn forward_with_cache(&self, inputs: &[f32]) -> (Vec<f32>, Vec<f32>) {
+        let mut z = vec![0.0; self.biases.len()];
+        let mut a = vec![0.0; self.biases.len()];
+        for j in 0..self.biases.len() {
+            z[j] = self.biases[j] + self.weights[j].iter().zip(inputs).map(|(&w, &x)| w * x).sum::<f32>();
+            a[j] = z[j].max(0.0); // ReLU activation
+        }
+        (z, a)
+    }
+
+    fn update_params(&mut self, inputs: &[f32], delta: &[f32], learning_rate: f32) {
+        for j in 0..self.biases.len() {
+            self.biases[j] -= learning_rate * delta[j];
+            for (i, wi) in self.weights[j].iter_mut().enumerate() {
+                *wi -= learning_rate * delta[j] * inputs[i];
             }
         }
     }
 }
 
-fn relu(x: f32) -> f32 {
-    x.max(0.0)
-}
-
+#[inline(always)]
 fn relu_derivative(x: f32) -> f32 {
     if x > 0.0 { 1.0 } else { 0.0 }
 }
 
 fn main() {
-    // Read customer data and training parameters
     let customer_data: Vec<(Vec<f32>, f32)> = env::read();
     let epochs: usize = env::read();
     let learning_rate: f32 = env::read();
 
-    // Initialize the neural network
     let input_size = customer_data[0].0.len();
-    let mut nn = NeuralNetwork::new(&[input_size, 64, 32, 1], relu);
+    let mut nn = NeuralNetwork::new(&[input_size, 32, 16, 1]);
 
-    // Train the neural network
     for _ in 0..epochs {
         for (inputs, target) in &customer_data {
             nn.train(inputs, *target, learning_rate);
         }
     }
 
-    // Generate some predictions
     let test_inputs: Vec<Vec<f32>> = env::read();
-    let predictions: Vec<f32> = test_inputs.iter()
-        .map(|input| nn.forward(input)[0])
-        .collect();
+    let predictions: Vec<f32> = test_inputs.iter().map(|input| nn.forward(input)[0]).collect();
 
-    // Commit the trained weights, biases, and predictions
     let weights_and_biases: Vec<(Vec<Vec<f32>>, Vec<f32>)> = nn.layers
         .iter()
         .map(|layer| (layer.weights.clone(), layer.biases.clone()))
