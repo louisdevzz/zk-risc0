@@ -65,24 +65,19 @@ fn main() {
     // Extract the receipt
     let receipt = prove_info.receipt;
 
-    // Retrieve the trained model and predictions
-    let (weights_and_biases, predictions): (Vec<(Vec<Vec<f32>>, Vec<f32>)>, Vec<f32>) = receipt.journal.decode().unwrap();
+    // Retrieve the summary data
+    let (summary, avg_prediction): (Vec<(f32, f32)>, f32) = receipt.journal.decode().unwrap();
 
     // Print the journal contents
     println!("Guest output:");
     println!("{}", std::str::from_utf8(receipt.journal.bytes.as_slice()).unwrap());
 
     // Print the results
-    println!("Trained model:");
-    for (i, (weights, biases)) in weights_and_biases.iter().enumerate() {
-        println!("Layer {}:", i + 1);
-        println!("  Weights: {:?}", weights);
-        println!("  Biases: {:?}", biases);
+    println!("Neural Network Summary:");
+    for (i, (avg_weight, avg_bias)) in summary.iter().enumerate() {
+        println!("Layer {}: Avg Weight = {:.4}, Avg Bias = {:.4}", i + 1, avg_weight, avg_bias);
     }
-    println!("Predictions for test inputs:");
-    for (input, prediction) in training_data.test_inputs.iter().zip(predictions.iter()) {
-        println!("  Input: {:?}, Prediction: {:.4}", input, prediction);
-    }
+    println!("Average Prediction: {:.4}", avg_prediction);
 
     // Verify the receipt
     receipt.verify(GUEST_CODE_FOR_ZK_PROOF_ID).unwrap();

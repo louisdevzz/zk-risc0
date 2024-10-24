@@ -162,17 +162,29 @@ fn main() {
             },
             None => {
                 println!("Error: Failed to get prediction for input: {:?}", input);
-                predictions.push(f32::NAN); // Push NaN for failed predictions
+                predictions.push(f32::NAN);
             }
         }
     }
 
-    println!("\nCommitting results...");
-    let weights_and_biases: Vec<(Vec<Vec<f32>>, Vec<f32>)> = nn.layers
+    println!("\nPreparing summary for commitment...");
+    // Calculate average weights and biases for each layer
+    let summary: Vec<(f32, f32)> = nn.layers
         .iter()
-        .map(|layer| (layer.weights.clone(), layer.biases.clone()))
+        .map(|layer| {
+            let avg_weight = layer.weights.iter()
+                .flat_map(|w| w.iter())
+                .sum::<f32>() / (layer.weights.len() * layer.weights[0].len()) as f32;
+            let avg_bias = layer.biases.iter().sum::<f32>() / layer.biases.len() as f32;
+            (avg_weight, avg_bias)
+        })
         .collect();
-    env::commit(&(weights_and_biases, predictions));
+
+    // Calculate average prediction
+    let avg_prediction = predictions.iter().sum::<f32>() / predictions.len() as f32;
+
+    println!("\nCommitting summary results...");
+    env::commit(&(summary, avg_prediction));
 
     println!("Process completed successfully.");
 }
