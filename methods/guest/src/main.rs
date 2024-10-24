@@ -117,21 +117,53 @@ fn main() {
 
     let input_size = customer_data[0].0.len();
     let mut nn = NeuralNetwork::new(&[input_size, 32, 16, 1]);
+    
+    println!("Initial network parameters:");
+    print_network_params(&nn);
 
-    for _ in 0..epochs {
+    println!("\nStarting training...");
+    for epoch in 0..epochs {
+        let mut total_loss = 0.0;
         for (inputs, target) in &customer_data {
             nn.train(inputs, *target, learning_rate);
+            let prediction = nn.forward(inputs)[0];
+            let loss = (prediction - target).powi(2);
+            total_loss += loss;
+        }
+        let avg_loss = total_loss / customer_data.len() as f32;
+        
+        if epoch % 100 == 0 || epoch == epochs - 1 {
+            println!("Epoch {}: Average Loss = {:.6}", epoch, avg_loss);
         }
     }
 
+    println!("\nFinal network parameters:");
+    print_network_params(&nn);
+
     let test_inputs: Vec<Vec<f32>> = env::read();
-    let predictions: Vec<f32> = test_inputs.iter().map(|input| nn.forward(input)[0]).collect();
+    println!("\nTesting the network:");
+    let predictions: Vec<f32> = test_inputs.iter().map(|input| {
+        let prediction = nn.forward(input)[0];
+        println!("Input: {:?}, Prediction: {:.4}", input, prediction);
+        prediction
+    }).collect();
 
     let weights_and_biases: Vec<(Vec<Vec<f32>>, Vec<f32>)> = nn.layers
         .iter()
         .map(|layer| (layer.weights.clone(), layer.biases.clone()))
         .collect();
     env::commit(&(weights_and_biases, predictions));
+}
+
+fn print_network_params(nn: &NeuralNetwork) {
+    for (i, layer) in nn.layers.iter().enumerate() {
+        println!("Layer {}:", i + 1);
+        println!("  Weights:");
+        for (j, weights) in layer.weights.iter().enumerate() {
+            println!("    Neuron {}: {:?}", j, weights);
+        }
+        println!("  Biases: {:?}", layer.biases);
+    }
 }
 
 risc0_zkvm::guest::entry!(main);

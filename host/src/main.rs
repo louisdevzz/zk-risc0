@@ -68,6 +68,10 @@ fn main() {
     // Retrieve the trained model and predictions
     let (weights_and_biases, predictions): (Vec<(Vec<Vec<f32>>, Vec<f32>)>, Vec<f32>) = receipt.journal.decode().unwrap();
 
+    // Print the journal contents
+    println!("Guest output:");
+    println!("{}", std::str::from_utf8(receipt.journal.bytes.as_slice()).unwrap());
+
     // Print the results
     println!("Trained model:");
     for (i, (weights, biases)) in weights_and_biases.iter().enumerate() {
