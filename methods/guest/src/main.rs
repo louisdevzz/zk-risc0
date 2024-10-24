@@ -42,35 +42,17 @@ impl NeuralNetwork {
         }
 
         // Backward pass
-        let mut deltas = Vec::with_capacity(self.layers.len());
-        
-        // Calculate initial delta for the output layer
         let mut delta = vec![0.0; self.layers.last().unwrap().biases.len()];
         for j in 0..delta.len() {
             let z = weighted_inputs.last().unwrap()[j];
             delta[j] = (activations.last().unwrap()[j] - target) * relu_derivative(z);
         }
-        deltas.push(delta);
 
-        // Calculate deltas for hidden layers
-        for l in (0..self.layers.len() - 1).rev() {
-            let next_delta = deltas.last().unwrap();
-            let layer = &self.layers[l + 1];
-            let mut delta = vec![0.0; self.layers[l].biases.len()];
-            for i in 0..delta.len() {
-                delta[i] = layer.weights.iter()
-                    .zip(next_delta.iter())
-                    .map(|(w, &d)| w[i] * d)
-                    .sum::<f32>()
-                    * relu_derivative(weighted_inputs[l][i]);
+        for (l, layer) in self.layers.iter_mut().enumerate().rev() {
+            layer.update_params(&activations[l], &delta, learning_rate);
+            if l > 0 {
+                delta = layer.backward(&delta, &weighted_inputs[l - 1]);
             }
-            deltas.push(delta);
-        }
-        deltas.reverse();
-
-        // Update weights and biases
-        for (l, layer) in self.layers.iter_mut().enumerate() {
-            layer.update_params(&activations[l], &deltas[l], learning_rate);
         }
     }
 }
@@ -93,6 +75,14 @@ impl Layer {
             a[j] = z[j].max(0.0); // ReLU activation
         }
         (z, a)
+    }
+
+    fn backward(&self, next_delta: &[f32], weighted_inputs: &[f32]) -> Vec<f32> {
+        let mut delta = vec![0.0; self.weights[0].len()];
+        for (i, di) in delta.iter_mut().enumerate() {
+            *di = self.weights.iter().zip(next_delta).map(|(w, &d)| w[i] * d).sum::<f32>() * relu_derivative(weighted_inputs[i]);
+        }
+        delta
     }
 
     fn update_params(&mut self, inputs: &[f32], delta: &[f32], learning_rate: f32) {
@@ -127,10 +117,7 @@ fn main() {
 
     let input_size = customer_data[0].0.len();
     println!("Initializing neural network with input size: {}", input_size);
-    let mut nn = NeuralNetwork::new(&[input_size, 32, 16, 1]);
-
-    println!("Initial network parameters:");
-    print_network_params(&nn);
+    let mut nn = NeuralNetwork::new(&[input_size, 16, 1]); // Reduced network size
 
     println!("\nStarting training...");
     for epoch in 0..epochs {
@@ -148,27 +135,16 @@ fn main() {
         }
     }
 
-    println!("\nTraining completed.");
-    println!("Final network parameters:");
-    print_network_params(&nn);
+    println!("\nTraining completed. Starting prediction on test inputs...");
+    let predictions: Vec<f32> = test_inputs.iter()
+        .map(|input| {
+            let pred = nn.forward(input)[0];
+            println!("Input: {:?}, Prediction: {:.4}", input, pred);
+            pred
+        })
+        .collect();
 
-    println!("\nTesting the network:");
-    let mut predictions = Vec::new();
-    for input in &test_inputs {
-        match nn.forward(input).get(0) {
-            Some(&prediction) => {
-                println!("Input: {:?}, Prediction: {:.4}", input, prediction);
-                predictions.push(prediction);
-            },
-            None => {
-                println!("Error: Failed to get prediction for input: {:?}", input);
-                predictions.push(f32::NAN);
-            }
-        }
-    }
-
-    println!("\nPreparing summary for commitment...");
-    // Calculate average weights and biases for each layer
+    println!("\nCalculating summary statistics...");
     let summary: Vec<(f32, f32)> = nn.layers
         .iter()
         .map(|layer| {
@@ -180,24 +156,12 @@ fn main() {
         })
         .collect();
 
-    // Calculate average prediction
     let avg_prediction = predictions.iter().sum::<f32>() / predictions.len() as f32;
 
-    println!("\nCommitting summary results...");
+    println!("\nCommitting results...");
     env::commit(&(summary, avg_prediction));
 
-    println!("Process completed successfully.");
-}
-
-fn print_network_params(nn: &NeuralNetwork) {
-    for (i, layer) in nn.layers.iter().enumerate() {
-        println!("Layer {}:", i + 1);
-        println!("  Weights:");
-        for (j, weights) in layer.weights.iter().enumerate() {
-            println!("    Neuron {}: {:?}", j, weights);
-        }
-        println!("  Biases: {:?}", layer.biases);
-    }
+    println!("Guest program completed successfully.");
 }
 
 risc0_zkvm::guest::entry!(main);

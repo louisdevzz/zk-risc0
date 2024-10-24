@@ -3,9 +3,8 @@
 use methods::{
     GUEST_CODE_FOR_ZK_PROOF_ELF, GUEST_CODE_FOR_ZK_PROOF_ID
 };
-use risc0_zkvm::{default_prover, ExecutorEnv};
+use risc0_zkvm::{default_prover, ExecutorEnv, Receipt};
 use serde::{Serialize, Deserialize};
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 #[derive(Serialize, Deserialize)]
 struct TrainingData {
@@ -16,13 +15,9 @@ struct TrainingData {
 }
 
 fn main() {
-    // Initialize tracing
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::from_default_env())
-        .init();
+    println!("Starting the host program...");
 
-    // Prepare the training data
+    println!("Preparing training data...");
     let training_data = TrainingData {
         customer_data: vec![
             (vec![1.0, 2.0, 3.0], 0.3),
@@ -30,24 +25,17 @@ fn main() {
             (vec![3.0, 4.0, 5.0], 0.7),
             (vec![4.0, 5.0, 6.0], 0.9),
             (vec![5.0, 6.0, 7.0], 1.1),
-            (vec![1.5, 2.5, 3.5], 0.4),
-            (vec![2.5, 3.5, 4.5], 0.6),
-            (vec![3.5, 4.5, 5.5], 0.8),
-            (vec![4.5, 5.5, 6.5], 1.0),
-            (vec![0.5, 1.5, 2.5], 0.2),
         ],
-        epochs: 500,  // Changed from 5000 to 100
-        learning_rate: 0.001,
+        epochs: 100,
+        learning_rate: 0.01,
         test_inputs: vec![
             vec![1.2, 2.2, 3.2],
             vec![2.7, 3.7, 4.7],
             vec![3.8, 4.8, 5.8],
-            vec![0.8, 1.8, 2.8],
-            vec![4.2, 5.2, 6.2],
         ],
     };
 
-    // Create the ExecutorEnv and write the training data
+    println!("Creating ExecutorEnv and writing training data...");
     let env = ExecutorEnv::builder()
         .write(&training_data.customer_data).unwrap()
         .write(&training_data.epochs).unwrap()
@@ -56,30 +44,25 @@ fn main() {
         .build()
         .unwrap();
 
-    // Obtain the default prover and prove the guest code
+    println!("Initializing prover...");
     let prover = default_prover();
-    let prove_info = prover
-        .prove(env, GUEST_CODE_FOR_ZK_PROOF_ELF)
-        .unwrap();
 
-    // Extract the receipt
-    let receipt = prove_info.receipt;
+    println!("Starting the proving process...");
+    let prove_info = prover.prove(env, GUEST_CODE_FOR_ZK_PROOF_ELF).unwrap();
+    let receipt: Receipt = prove_info.receipt; // Extract the Receipt from ProveInfo
 
-    // Retrieve the summary data
+    println!("Proof generated successfully. Decoding journal...");
     let (summary, avg_prediction): (Vec<(f32, f32)>, f32) = receipt.journal.decode().unwrap();
 
-    // Print the journal contents
-    println!("Guest output:");
-    println!("{}", std::str::from_utf8(receipt.journal.bytes.as_slice()).unwrap());
-
-    // Print the results
-    println!("Neural Network Summary:");
+    println!("\nNeural Network Summary:");
     for (i, (avg_weight, avg_bias)) in summary.iter().enumerate() {
         println!("Layer {}: Avg Weight = {:.4}, Avg Bias = {:.4}", i + 1, avg_weight, avg_bias);
     }
     println!("Average Prediction: {:.4}", avg_prediction);
 
-    // Verify the receipt
+    println!("\nVerifying the receipt...");
     receipt.verify(GUEST_CODE_FOR_ZK_PROOF_ID).unwrap();
     println!("Proof verified successfully!");
+
+    println!("Host program completed.");
 }
