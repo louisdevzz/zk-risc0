@@ -1,0 +1,14 @@
+[workspace]
+members = ["host", "methods"]
+
+[workspace.dependencies]
+risc0-zkvm = "1.1.2"
+rand = "0.8"
+
+# Always optimize; building and running the guest takes much longer without optimization.
+[profile.dev]
+opt-level = 3
+
+[profile.release]
+debug = 1
+lto = true
